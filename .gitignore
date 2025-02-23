@@ -1,2 +1,4 @@
 bin/
 pkg/
+logs/
+*.toml
