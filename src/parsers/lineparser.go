@@ -1,3 +1,4 @@
+// Package parsers handles parsing and bulk indexing of documents into OpenSearch.
 package parsers
 
 import (
@@ -9,102 +10,102 @@ import (
 	"strings"
 
 	"github.com/opensearch-project/opensearch-go"
+	"github.com/rjohnsen/logwarp/src/models"
 )
 
-type Index struct {
-	Id    string `json:"_id"`
-	Index string `json:"_index"`
-}
+// ParseLinesAndInsert reads a file line by line, parses each line as JSON,
+// and performs bulk inserts into OpenSearch.
+func LineParser(client *opensearch.Client, filePath string) {
+	const bulkSize = 10000
 
-type IndexData struct {
-	Index Index `json:"index"`
-}
-
-type Source struct {
-	Source map[string]interface{} `json:"_source"`
-}
-
-type Document struct {
-	Meta   IndexData
-	Source Source
-}
-
-func LineParser(client *opensearch.Client, filepath string) {
-	bulk_size := 10000
-	file, err := os.Open(filepath)
-
+	file, err := os.Open(filePath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to open file: %v", err)
 	}
-
 	defer file.Close()
 
-	// Read file line by line into buffer
 	scanner := bufio.NewScanner(file)
-
-	var bulk_data []Document
+	var documentsBatch []models.Document
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		var rawJSON map[string]interface{}
 
-		var doc Document
-		err := json.Unmarshal([]byte(line), &doc.Meta.Index)
-
-		if err != nil {
-			fmt.Println("Error parsing JSON Index data")
+		// Parse JSON line into a temporary map to extract both index and source data.
+		if err := json.Unmarshal([]byte(line), &rawJSON); err != nil {
+			log.Printf("Failed to parse JSON: %v", err)
+			continue
 		}
 
-		err_1 := json.Unmarshal([]byte(line), &doc.Source)
-
-		if err_1 != nil {
-			fmt.Println("Error parsing JSON Source")
+		// Extract index and source information into a Document struct.
+		document := models.Document{
+			Metadata: models.IndexMetadataWrapper{
+				Index: models.IndexMeta{
+					DocumentID: rawJSON["_id"].(string),
+					IndexName:  rawJSON["_index"].(string),
+				},
+			},
+			Source: models.DocumentSource{
+				Content: rawJSON["_source"].(map[string]interface{}),
+			},
 		}
 
-		bulk_data = append(bulk_data, doc)
+		documentsBatch = append(documentsBatch, document)
 
-		if len(bulk_data) == bulk_size {
-			BulkInsert(client, bulk_data)
-			bulk_data = nil
+		// Perform bulk insert when the batch reaches bulkSize.
+		if len(documentsBatch) >= bulkSize {
+			if err := PerformBulkInsert(client, documentsBatch); err != nil {
+				log.Printf("Bulk insert failed: %v", err)
+			}
+			documentsBatch = documentsBatch[:0] // Clear slice without reallocating.
 		}
 	}
 
-	if len(bulk_data) > 0 {
-		BulkInsert(client, bulk_data)
+	// Insert remaining documents if any.
+	if len(documentsBatch) > 0 {
+		if err := PerformBulkInsert(client, documentsBatch); err != nil {
+			log.Printf("Bulk insert failed: %v", err)
+		}
 	}
 }
 
-func BulkInsert(client *opensearch.Client, documents []Document) {
-	var insertion_list []string
+// PerformBulkInsert performs a bulk insert of documents into OpenSearch.
+func PerformBulkInsert(client *opensearch.Client, documents []models.Document) error {
+	var bulkRequestPayload []string
 
+	// Prepare bulk request payload.
 	for _, document := range documents {
-		index, _ := json.Marshal(document.Meta)
-		record, _ := json.Marshal(document.Source.Source)
+		indexMetadata, err := json.Marshal(document.Metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal index metadata: %w", err)
+		}
+		documentContent, err := json.Marshal(document.Source.Content)
+		if err != nil {
+			return fmt.Errorf("failed to marshal document content: %w", err)
+		}
 
-		insertion_list = append(insertion_list, string(index))
-		insertion_list = append(insertion_list, string(record))
+		bulkRequestPayload = append(bulkRequestPayload, string(indexMetadata), string(documentContent))
 	}
 
-	shipment := strings.Join(insertion_list, "\n") + "\n"
-	bulkResp, err := client.Bulk(strings.NewReader(shipment))
-
+	// Create shipment payload for OpenSearch bulk API.
+	bulkRequestBody := strings.Join(bulkRequestPayload, "\n") + "\n"
+	bulkResponse, err := client.Bulk(strings.NewReader(bulkRequestBody))
 	if err != nil {
-		fmt.Println("Bulkresp")
-		fmt.Println(err)
-		fmt.Println(bulkResp)
+		return fmt.Errorf("failed to execute bulk request: %w", err)
+	}
+	defer bulkResponse.Body.Close()
+
+	// Check response status.
+	if bulkResponse.StatusCode != 200 {
+		return fmt.Errorf("bulk request failed with status: %d", bulkResponse.StatusCode)
 	}
 
-	respAsJson, err := json.MarshalIndent(bulkResp, "", "  ")
-	if err != nil {
-		fmt.Println("respAsJson")
-		fmt.Println(err)
+	// Parse response for success confirmation.
+	var responseJSON map[string]interface{}
+	if err := json.NewDecoder(bulkResponse.Body).Decode(&responseJSON); err != nil {
+		return fmt.Errorf("failed to parse bulk response: %w", err)
 	}
 
-	var result map[string]interface{}
-
-	if err := json.Unmarshal(respAsJson, &result); err != nil {
-		fmt.Println("Error:", err)
-		return
-	} else {
-		fmt.Printf("Status => %f; Records: %d\n", result["StatusCode"].(float64), len(documents))
-	}
+	log.Printf("Status: %v => Documents Indexed: %d", bulkResponse.StatusCode, len(documents))
+	return nil
 }
