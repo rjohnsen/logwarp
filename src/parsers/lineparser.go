@@ -99,5 +99,12 @@ func BulkInsert(client *opensearch.Client, documents []Document) {
 		fmt.Println(err)
 	}
 
-	fmt.Println(string(respAsJson))
+	var result map[string]interface{}
+
+	if err := json.Unmarshal(respAsJson, &result); err != nil {
+		fmt.Println("Error:", err)
+		return
+	} else {
+		fmt.Printf("Status => %f; Records: %d\n", result["StatusCode"].(float64), len(documents))
+	}
 }
