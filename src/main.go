@@ -29,10 +29,31 @@ func main() {
 		if err != nil {
 			fmt.Println("Error: %w", err)
 		} else {
+			fmt.Println("=== Client information ===")
 			fmt.Println(client.Info())
-			// parsers.LineParser(client, "./logs/small.ndjson")
-			parsers.LineParser(client, "./logs/01-L2-1.ndjson")
 
+			/*
+				logs := []string{
+					"./logs/01-L2-1.ndjson",
+					"./logs/01-L2-2.ndjson",
+					"./logs/01-L2-3.ndjson",
+					"./logs/01-L2-4.ndjson",
+					"./logs/01-L2-5.ndjson",
+					"./logs/01-L2-6.ndjson",
+				}
+
+				for _, log := range logs {
+					parsers.LineParser(client, "huntlab", log)
+				}
+
+			*/
+
+			parsers.GrokParser(
+				client,
+				"apache",
+				"./logs/apache_logs",
+				"%{IPORHOST:clientip} %{USER:ident} %{USER:auth} \\[%{HTTPDATE:timestamp}\\] \"(?:%{WORD:verb} %{NOTSPACE:request}(?: HTTP/%{NUMBER:httpversion})?|%{DATA:rawrequest})\" %{NUMBER:response} (?:%{NUMBER:bytes}|-) %{QS:referrer} %{QS:agent}",
+			)
 		}
 	}
 }
