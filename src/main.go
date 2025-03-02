@@ -1,5 +1,8 @@
 package main
 
+// @todo: Solve timestamp format
+// @todo: Create a generic NDJSON parser
+
 import (
 	"crypto/tls"
 	"fmt"
@@ -43,7 +46,7 @@ func main() {
 				}
 
 				for _, log := range logs {
-					parsers.LineParser(client, "huntlab", log)
+					parsers.ElasticParser(client, "huntlab", log)
 				}
 
 			*/

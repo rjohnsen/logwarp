@@ -12,9 +12,9 @@ import (
 	"github.com/rjohnsen/logwarp/src/models"
 )
 
-// ParseLinesAndInsert reads a file line by line, parses each line as JSON,
+// ElasticParser reads a file line by line, parses each line as JSON,
 // and performs bulk inserts into OpenSearch.
-func LineParser(client *opensearch.Client, index string, filePath string) {
+func ElasticParser(client *opensearch.Client, index string, filePath string) {
 	const bulkSize = 5000
 
 	file, err := os.Open(filePath)
