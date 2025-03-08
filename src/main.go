@@ -61,12 +61,10 @@ func main() {
 			err := json.Unmarshal(m.Data, &message)
 
 			if err != nil {
-				log.Println("Failed to marse log message: ", err)
+				log.Println("Failed to parse log message: ", err)
 			} else {
-				fmt.Println(message.Index)
-				fmt.Println(message.Log)
-				fmt.Println(message.Grok)
-				fmt.Println(message.Parser)
+				fmt.Println("ID: %s", message.Id)
+				fmt.Println("INDEX: %s", message.Index)
 
 				log_exists, _ := controllers.LogFileExists(settings.Logwarp.Logfolder, message.Log)
 
@@ -76,7 +74,7 @@ func main() {
 					// Determine which parser to run
 					switch strings.ToLower(message.Parser) {
 					case "grok":
-						go parsers.GrokParser(opseclient, message.Index, logFile, message.Grok)
+						go parsers.GrokParser(natsclient, message.Id, opseclient, message.Index, logFile, message.Grok)
 					default:
 						fmt.Println("Nope. No such value")
 					}

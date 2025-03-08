@@ -2,6 +2,7 @@ package parsers
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -9,15 +10,31 @@ import (
 
 	"github.com/elastic/go-grok"
 	"github.com/google/uuid"
+	"github.com/nats-io/nats.go"
 	"github.com/opensearch-project/opensearch-go"
 	"github.com/rjohnsen/logwarp/src/controllers"
 	"github.com/rjohnsen/logwarp/src/models"
 )
 
-func GrokParser(client *opensearch.Client, index string, filePath string, grokpattern string) {
+func SendError(natsclient *nats.Conn, message models.NatsJobError) {
+	msg, err := json.Marshal(message)
+
+	if err != nil {
+		fmt.Println("Unable to Marshal")
+	}
+
+	err = natsclient.Publish("logwarp/output", []byte(msg))
+	if err != nil {
+		log.Fatalf("Failed to send message: %v", err)
+	}
+
+	log.Println("Message sent to back NATS")
+}
+
+func GrokParser(natsclient *nats.Conn, jobid string, client *opensearch.Client, index string, filepath string, grokpattern string) {
 	const bulkSize = 5000
 
-	file, err := os.Open(filePath)
+	file, err := os.Open(filepath)
 	if err != nil {
 		log.Fatalf("Failed to open file: %v", err)
 	}
@@ -59,7 +76,9 @@ func GrokParser(client *opensearch.Client, index string, filePath string, grokpa
 					converted_time, _ := ConvertTimeFormat(timestamp)
 					document.Source.Content["timestamp"] = converted_time
 				} else {
-					log.Printf("Warning: Missing or invalid timestamp in line: %s", line)
+					// log.Printf("Warning: Missing or invalid timestamp in line: %s", line)
+					error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Missing or invalid timestamp in line %s", line)}
+					SendError(natsclient, error)
 				}
 
 				documentsBatch = append(documentsBatch, document)

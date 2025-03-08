@@ -7,3 +7,8 @@ type NatsJobMessage struct {
 	Grok   string `json:"grokpattern"`
 	Parser string `json:"parser"`
 }
+
+type NatsJobError struct {
+	Id    string `json:"id"`
+	Error string `json:"error"`
+}
