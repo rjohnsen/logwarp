@@ -8,12 +8,25 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// Settings holds the configuration parameters loaded from a TOML file.
-type Settings struct {
+type Nats struct {
+	Address string `toml:"address"`
+}
+
+type Logwarp struct {
+	Logfolder string `toml:"logfolder"`
+}
+
+type OpenSearch struct {
 	Address   string `toml:"address"`
 	VerifyTLS bool   `toml:"verifytls"`
 	Username  string `toml:"username"`
 	Password  string `toml:"password"`
+}
+
+type Settings struct {
+	Nats       Nats       `toml:"nats"`
+	Logwarp    Logwarp    `toml:"logwarp"`
+	OpenSearch OpenSearch `toml:opensearch`
 }
 
 // LoadSettings reads a TOML configuration file and unmarshals it into a Settings struct.
