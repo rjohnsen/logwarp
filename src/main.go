@@ -15,16 +15,10 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/opensearch-project/opensearch-go"
 	"github.com/rjohnsen/logwarp/src/controllers"
+	"github.com/rjohnsen/logwarp/src/models"
 	"github.com/rjohnsen/logwarp/src/parsers"
 	"github.com/rjohnsen/logwarp/src/settings"
 )
-
-type LogWarpMessage struct {
-	Index  string `json:"index"`
-	Log    string `json:"log"`
-	Grok   string `json:"grokpattern"`
-	Parser string `json:"parser"`
-}
 
 func main() {
 	// Load settings
@@ -62,7 +56,7 @@ func main() {
 		defer natsclient.Close()
 
 		_, err = natsclient.Subscribe("logwarp/commands", func(m *nats.Msg) {
-			var message LogWarpMessage
+			var message models.NatsJobMessage
 
 			err := json.Unmarshal(m.Data, &message)
 
