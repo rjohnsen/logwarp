@@ -2,41 +2,22 @@ package parsers
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
 	"github.com/elastic/go-grok"
 	"github.com/google/uuid"
-	"github.com/nats-io/nats.go"
 	"github.com/rjohnsen/logwarp/src/controllers"
 	"github.com/rjohnsen/logwarp/src/models"
 	"github.com/rjohnsen/logwarp/src/syskernel"
 )
 
-func SendError(natsclient *nats.Conn, message models.NatsJobError) {
-	msg, err := json.Marshal(message)
-
-	if err != nil {
-		log.Print("ERROR: Unable to Marshal")
-	}
-
-	err = natsclient.Publish("logwarp/output", []byte(msg))
-
-	if err != nil {
-		log.Printf("ERROR: Failed to send message: %v", err)
-	}
-
-	log.Printf("ERROR: %s", message.Error)
-}
-
 func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, filepath string, grokpattern string) {
 	file, err := os.Open(filepath)
 	if err != nil {
-		error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Failed to open file: %v", err)}
-		SendError(appContxt.Nats, error)
+		error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Failed to open file: %v", err)}
+		syskernel.SendError(appContxt.Nats, error)
 	}
 	defer file.Close()
 
@@ -47,8 +28,8 @@ func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, fil
 	err_grok := groker.Compile(grokpattern, true)
 
 	if err_grok != nil {
-		error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Unable to compile Grok statement: %s, %v", grokpattern, err)}
-		SendError(appContxt.Nats, error)
+		error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Unable to compile Grok statement: %s, %v", grokpattern, err)}
+		syskernel.SendError(appContxt.Nats, error)
 	} else {
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -56,8 +37,8 @@ func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, fil
 			data, err := groker.ParseTypedString(line)
 
 			if err != nil {
-				error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Unable to parse line: %s", line)}
-				SendError(appContxt.Nats, error)
+				error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Unable to parse line: %s", line)}
+				syskernel.SendError(appContxt.Nats, error)
 			} else {
 
 				documentId := uuid.New()
@@ -78,8 +59,8 @@ func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, fil
 					converted_time, _ := ConvertTimeFormat(timestamp)
 					document.Source.Content["timestamp"] = converted_time
 				} else {
-					error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Missing or invalid timestamp in line %s", line)}
-					SendError(appContxt.Nats, error)
+					error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Missing or invalid timestamp in line %s", line)}
+					syskernel.SendError(appContxt.Nats, error)
 				}
 
 				documentsBatch = append(documentsBatch, document)
@@ -87,8 +68,8 @@ func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, fil
 				// Perform bulk insert when the batch reaches bulkSize.
 				if len(documentsBatch) >= appContxt.Settings.OpenSearch.BulkSize {
 					if err := controllers.PerformBulkInsert(appContxt.OpenSearch, documentsBatch); err != nil {
-						error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Bulk insert failed: %v", err)}
-						SendError(appContxt.Nats, error)
+						error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Bulk insert failed: %v", err)}
+						syskernel.SendError(appContxt.Nats, error)
 					}
 					documentsBatch = documentsBatch[:0] // Clear slice without reallocating.
 				}
@@ -98,8 +79,8 @@ func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, fil
 		// Insert remaining documents if any.
 		if len(documentsBatch) > 0 {
 			if err := controllers.PerformBulkInsert(appContxt.OpenSearch, documentsBatch); err != nil {
-				error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Bulk insert failed: %v", err)}
-				SendError(appContxt.Nats, error)
+				error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Bulk insert failed: %v", err)}
+				syskernel.SendError(appContxt.Nats, error)
 			}
 		}
 	}
