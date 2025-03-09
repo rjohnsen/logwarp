@@ -13,7 +13,6 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/rjohnsen/logwarp/src/controllers"
-	"github.com/rjohnsen/logwarp/src/models"
 	"github.com/rjohnsen/logwarp/src/parsers"
 	"github.com/rjohnsen/logwarp/src/syskernel"
 )
@@ -29,7 +28,7 @@ func main() {
 
 	// Handle incoming work orders
 	_, natsSubsciptionErr := appContext.Nats.Subscribe("logwarp/commands", func(m *nats.Msg) {
-		var message models.NatsJobMessage
+		var message syskernel.NatsJobMessage
 
 		err := json.Unmarshal(m.Data, &message)
 
