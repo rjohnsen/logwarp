@@ -11,32 +11,32 @@ import (
 	"github.com/elastic/go-grok"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
-	"github.com/opensearch-project/opensearch-go"
 	"github.com/rjohnsen/logwarp/src/controllers"
 	"github.com/rjohnsen/logwarp/src/models"
+	"github.com/rjohnsen/logwarp/src/syskernel"
 )
 
 func SendError(natsclient *nats.Conn, message models.NatsJobError) {
 	msg, err := json.Marshal(message)
 
 	if err != nil {
-		fmt.Println("Unable to Marshal")
+		log.Print("ERROR: Unable to Marshal")
 	}
 
 	err = natsclient.Publish("logwarp/output", []byte(msg))
+
 	if err != nil {
-		log.Fatalf("Failed to send message: %v", err)
+		log.Printf("ERROR: Failed to send message: %v", err)
 	}
 
-	log.Println("Message sent to back NATS")
+	log.Printf("ERROR: %s", message.Error)
 }
 
-func GrokParser(natsclient *nats.Conn, jobid string, client *opensearch.Client, index string, filepath string, grokpattern string) {
-	const bulkSize = 5000
-
+func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, filepath string, grokpattern string) {
 	file, err := os.Open(filepath)
 	if err != nil {
-		log.Fatalf("Failed to open file: %v", err)
+		error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Failed to open file: %v", err)}
+		SendError(appContxt.Nats, error)
 	}
 	defer file.Close()
 
@@ -47,7 +47,8 @@ func GrokParser(natsclient *nats.Conn, jobid string, client *opensearch.Client, 
 	err_grok := groker.Compile(grokpattern, true)
 
 	if err_grok != nil {
-		log.Fatalf("Unable to compile Grok statement: %s, %v", grokpattern, err)
+		error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Unable to compile Grok statement: %s, %v", grokpattern, err)}
+		SendError(appContxt.Nats, error)
 	} else {
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -55,7 +56,8 @@ func GrokParser(natsclient *nats.Conn, jobid string, client *opensearch.Client, 
 			data, err := groker.ParseTypedString(line)
 
 			if err != nil {
-				log.Fatalf("Unable to parse line: %s", line)
+				error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Unable to parse line: %s", line)}
+				SendError(appContxt.Nats, error)
 			} else {
 
 				documentId := uuid.New()
@@ -76,17 +78,17 @@ func GrokParser(natsclient *nats.Conn, jobid string, client *opensearch.Client, 
 					converted_time, _ := ConvertTimeFormat(timestamp)
 					document.Source.Content["timestamp"] = converted_time
 				} else {
-					// log.Printf("Warning: Missing or invalid timestamp in line: %s", line)
 					error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Missing or invalid timestamp in line %s", line)}
-					SendError(natsclient, error)
+					SendError(appContxt.Nats, error)
 				}
 
 				documentsBatch = append(documentsBatch, document)
 
 				// Perform bulk insert when the batch reaches bulkSize.
-				if len(documentsBatch) >= bulkSize {
-					if err := controllers.PerformBulkInsert(client, documentsBatch); err != nil {
-						log.Printf("Bulk insert failed: %v", err)
+				if len(documentsBatch) >= appContxt.Settings.OpenSearch.BulkSize {
+					if err := controllers.PerformBulkInsert(appContxt.OpenSearch, documentsBatch); err != nil {
+						error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Bulk insert failed: %v", err)}
+						SendError(appContxt.Nats, error)
 					}
 					documentsBatch = documentsBatch[:0] // Clear slice without reallocating.
 				}
@@ -95,8 +97,9 @@ func GrokParser(natsclient *nats.Conn, jobid string, client *opensearch.Client, 
 
 		// Insert remaining documents if any.
 		if len(documentsBatch) > 0 {
-			if err := controllers.PerformBulkInsert(client, documentsBatch); err != nil {
-				log.Printf("Bulk insert failed: %v", err)
+			if err := controllers.PerformBulkInsert(appContxt.OpenSearch, documentsBatch); err != nil {
+				error := models.NatsJobError{Id: jobid, Error: fmt.Sprintf("Bulk insert failed: %v", err)}
+				SendError(appContxt.Nats, error)
 			}
 		}
 	}

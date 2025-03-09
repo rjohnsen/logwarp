@@ -21,6 +21,7 @@ type OpenSearch struct {
 	VerifyTLS bool   `toml:"verifytls"`
 	Username  string `toml:"username"`
 	Password  string `toml:"password"`
+	BulkSize  int    `toml:"bulksize"`
 }
 
 type Settings struct {
