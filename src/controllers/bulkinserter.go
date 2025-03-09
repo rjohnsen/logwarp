@@ -6,12 +6,12 @@ import (
 	"log"
 	"strings"
 
-	"github.com/opensearch-project/opensearch-go"
 	"github.com/rjohnsen/logwarp/src/models"
+	"github.com/rjohnsen/logwarp/src/syskernel"
 )
 
 // PerformBulkInsert performs a bulk insert of documents into OpenSearch.
-func PerformBulkInsert(client *opensearch.Client, documents []models.Document) error {
+func PerformBulkInsert(appContext *syskernel.AppContext, jobStatus *syskernel.NatsJobStatus, documents []models.Document) error {
 	var bulkRequestPayload []string
 
 	// Prepare bulk request payload.
@@ -30,7 +30,7 @@ func PerformBulkInsert(client *opensearch.Client, documents []models.Document) e
 
 	// Create shipment payload for OpenSearch bulk API.
 	bulkRequestBody := strings.Join(bulkRequestPayload, "\n") + "\n"
-	bulkResponse, err := client.Bulk(strings.NewReader(bulkRequestBody))
+	bulkResponse, err := appContext.OpenSearch.Bulk(strings.NewReader(bulkRequestBody))
 	if err != nil {
 		return fmt.Errorf("failed to execute bulk request: %w", err)
 	}
@@ -47,6 +47,11 @@ func PerformBulkInsert(client *opensearch.Client, documents []models.Document) e
 		return fmt.Errorf("failed to parse bulk response: %w", err)
 	}
 
+	jobStatus.Status = bulkResponse.StatusCode
+	jobStatus.Records += len(documents)
+	syskernel.SendStatus(appContext.Nats, *jobStatus)
+
 	log.Printf("Status: %v => Documents Indexed: %d", bulkResponse.StatusCode, len(documents))
+
 	return nil
 }

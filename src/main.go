@@ -47,6 +47,8 @@ func main() {
 				switch strings.ToLower(message.Parser) {
 				case "grok":
 					go parsers.GrokParser(appContext, message.Id, message.Index, logFile, message.Grok)
+				case "elastic":
+					go parsers.ElasticParser(appContext, message.Id, message.Index, logFile)
 				default:
 					fmt.Println("Nope. No such value")
 				}

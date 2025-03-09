@@ -13,11 +13,17 @@ import (
 	"github.com/rjohnsen/logwarp/src/syskernel"
 )
 
-func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, filepath string, grokpattern string) {
-	file, err := os.Open(filepath)
+func GrokParser(appContext *syskernel.AppContext, jobid string, index string, filePath string, grokpattern string) {
+	jobstatus := syskernel.NatsJobStatus{
+		Id:      jobid,
+		Records: 0,
+		Status:  0,
+	}
+
+	file, err := os.Open(filePath)
 	if err != nil {
 		error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Failed to open file: %v", err)}
-		syskernel.SendError(appContxt.Nats, error)
+		syskernel.SendError(appContext.Nats, error)
 	}
 	defer file.Close()
 
@@ -29,7 +35,7 @@ func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, fil
 
 	if err_grok != nil {
 		error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Unable to compile Grok statement: %s, %v", grokpattern, err)}
-		syskernel.SendError(appContxt.Nats, error)
+		syskernel.SendError(appContext.Nats, error)
 	} else {
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -38,7 +44,7 @@ func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, fil
 
 			if err != nil {
 				error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Unable to parse line: %s", line)}
-				syskernel.SendError(appContxt.Nats, error)
+				syskernel.SendError(appContext.Nats, error)
 			} else {
 
 				documentId := uuid.New()
@@ -60,16 +66,16 @@ func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, fil
 					document.Source.Content["timestamp"] = converted_time
 				} else {
 					error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Missing or invalid timestamp in line %s", line)}
-					syskernel.SendError(appContxt.Nats, error)
+					syskernel.SendError(appContext.Nats, error)
 				}
 
 				documentsBatch = append(documentsBatch, document)
 
 				// Perform bulk insert when the batch reaches bulkSize.
-				if len(documentsBatch) >= appContxt.Settings.OpenSearch.BulkSize {
-					if err := controllers.PerformBulkInsert(appContxt.OpenSearch, documentsBatch); err != nil {
+				if len(documentsBatch) >= appContext.Settings.OpenSearch.BulkSize {
+					if err := controllers.PerformBulkInsert(appContext, &jobstatus, documentsBatch); err != nil {
 						error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Bulk insert failed: %v", err)}
-						syskernel.SendError(appContxt.Nats, error)
+						syskernel.SendError(appContext.Nats, error)
 					}
 					documentsBatch = documentsBatch[:0] // Clear slice without reallocating.
 				}
@@ -78,9 +84,9 @@ func GrokParser(appContxt *syskernel.AppContext, jobid string, index string, fil
 
 		// Insert remaining documents if any.
 		if len(documentsBatch) > 0 {
-			if err := controllers.PerformBulkInsert(appContxt.OpenSearch, documentsBatch); err != nil {
+			if err := controllers.PerformBulkInsert(appContext, &jobstatus, documentsBatch); err != nil {
 				error := syskernel.NatsJobError{Id: jobid, Error: fmt.Sprintf("Bulk insert failed: %v", err)}
-				syskernel.SendError(appContxt.Nats, error)
+				syskernel.SendError(appContext.Nats, error)
 			}
 		}
 	}
